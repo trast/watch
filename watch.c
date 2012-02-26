@@ -325,7 +325,6 @@ void send_lru(int conn)
 		p += len;
 		*p++ = '\n';
 	}
-	*p++ = '\0';
 	pthread_mutex_unlock(&lru_lock);
 	write(conn, buf, p-buf); /* errors ignored */
 }
