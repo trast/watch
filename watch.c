@@ -73,6 +73,8 @@ const char *ignore_patterns[] = {
     "/home/thomas/g1/maps/*",
     "/home/thomas/eth/vc_simulation/*",
     "/home/thomas/logs",
+    "*/.depend",
+    "*/backup",
     NULL
 };
 
@@ -180,8 +182,7 @@ void setup_watches (const char *dir)
 	fullent[dirlen] = '/';
 	struct dirent *ent;
 	if (!dirfd) {
-		if (errno == ENOENT)
-			/* it probably just vanished */
+		if (errno == ENOENT || errno == EACCES)
 			return;
 		die_errno("opendir");
 	}
@@ -198,8 +199,11 @@ void setup_watches (const char *dir)
 		if (!isdir(fullent))
 			continue;
 		wd = inotify_add_watch(ifd, fullent, MASK);
-		if (wd < 0)
+		if (wd < 0) {
+			if (errno == EACCES || errno == ENOENT)
+				continue;
 			die_errno("inotify_add_watch");
+		}
 		set_dirpath(wd, fullent);
 		fprintf(stderr, "%d: %s\n", wd, fullent);
 		setup_watches(fullent);
@@ -230,6 +234,9 @@ void handle_event(struct inotify_event *ev)
 	wdp = wdpaths[ev->wd];
 	if (!wdp)
 		return;
+	/* inotify shows directory events in the parent too; ignore them there */
+	if (ev->len && ev->mask & IN_ISDIR)
+		return;
 	if (ev->mask & IN_IGNORED) {
 		wdpaths[ev->wd] = NULL;
 		for (i = 0; i < HIST; i++) {
@@ -245,12 +252,15 @@ void handle_event(struct inotify_event *ev)
 		free(wdp);
 		return;
 	}
-	if (ev->mask & (IN_ISDIR | IN_CREATE)) {
+	if (ev->mask != IN_ACCESS)
+		fprintf(stdout, "%08x %s %s %s\n", ev->mask, event_msg(ev->mask), wdp,
+			ev->len ? ev->name : "(none)");
+	if (ev->mask & IN_ISDIR && ev->mask & IN_CREATE) {
 		char buf[PATH_MAX];
 		strcpy(buf, wdp);
 		strcat(buf, "/");
 		strcat(buf, ev->name);
-		// setup_watches(buf);
+		setup_watches(buf);
 	}
 	for (i = 0; i < HIST; i++) {
 		if (!lru[i])
@@ -362,6 +372,7 @@ int main (int argc, char *argv[])
 	if (close(sock) < 0)
 		die_errno("close");
 
+	pthread_kill(wt, SIGINT);
 	if (pthread_join(wt, NULL))
 		die_errno("pthread_join");
 
