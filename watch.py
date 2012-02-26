@@ -4,14 +4,17 @@ import sys
 import time
 import os
 import os.path
-from watchdog.observers.api import BaseObserver, DEFAULT_EMITTER_TIMEOUT, DEFAULT_OBSERVER_TIMEOUT
-from watchdog.observers.inotify import InotifyEmitter
-from watchdog.events import FileSystemEventHandler
-from watchdog.utils import DaemonThread
+import re
 import socket
 import fnmatch
+import pyinotify
+from watchdog.utils import DaemonThread
 
 eu = os.path.expanduser
+HOME = eu('~')
+
+wm = pyinotify.WatchManager()
+mask = pyinotify.ALL_EVENTS
 
 lru = []
 
@@ -29,37 +32,30 @@ ignore = [
     '~/eth/vc_simulation/*',
     '~/logs',
     ]
-ignore = [eu(x) for x in ignore]
+ignore_re = re.compile('|'.join('(?:%s)' % fnmatch.translate(eu(x)) for x in ignore))
 
-class MyInotifyEmitter(InotifyEmitter):
-    def __init__(self, event_queue, watch, timeout=DEFAULT_EMITTER_TIMEOUT):
-        InotifyEmitter.__init__(self, event_queue, watch, timeout)
-        for root,dirs,files in os.walk(watch.path):
-            for i,d in reversed(list(enumerate(dirs))):
-                fulldir = os.path.join(root,d)
-                if not os.path.islink(fulldir) and \
-                        not any(fnmatch.fnmatch(fulldir, pat) for pat in ignore):
-                    print fulldir
-                    self._inotify.add_watch(fulldir)
-                else:
-                    del dirs[i]
+def setup_watches(path):
+    for root,dirs,files in os.walk(path):
+        for i,d in reversed(list(enumerate(dirs))):
+            fulldir = os.path.join(root,d)
+            if not os.path.islink(fulldir) and not ignore_re.match(fulldir):
+                print fulldir
+                wm.add_watch(fulldir, mask)
+            else:
+                del dirs[i]
 
-class MyInotifyObserver(BaseObserver):
-    """
-    Observer thread that schedules watching directories and dispatches
-    calls to event handlers.
-    """
-
-    def __init__(self, timeout=DEFAULT_OBSERVER_TIMEOUT):
-        BaseObserver.__init__(self, emitter_class=MyInotifyEmitter,
-                              timeout=timeout)
-
-HOME = eu('~')
-
-class MyHandler(FileSystemEventHandler):
-    def dispatch(self, event):
+class Handler(pyinotify.ProcessEvent):
+    def process_normal(self, event):
+        path = os.path.join(event.path, event.name)
+        print "see_dirname: %s" % path
+        self.see_dirname(path)
+    process_IN_CREATE = process_normal
+    process_IN_DELETE = process_normal
+    process_IN_ACCESS = process_normal
+    def see_dirname(self, path):
+        self.see(os.path.dirname(path))
+    def see(self, path):
         global lru
-        path = os.path.dirname(event.src_path)
         if path == HOME:
             return
         if path.startswith(HOME+'/'):
@@ -80,11 +76,20 @@ except OSError:
 
 sock.bind(SOCKNAME)
 
+class NotifierThread(DaemonThread):
+    def __init__(self):
+        DaemonThread.__init__(self)
+        self.notifier = pyinotify.Notifier(wm, Handler())
+    def run(self):
+        while self.should_keep_running():
+            self.notifier.process_events()
+            if self.notifier.check_events():
+                self.notifier.read_events()
+
 if __name__ == "__main__":
-    event_handler = MyHandler()
-    observer = MyInotifyObserver()
-    observer.schedule(event_handler, eu('~'))
-    observer.start()
+    setup_watches(HOME)
+    notifier = NotifierThread()
+    notifier.start()
     try:
         while True:
             sock.listen(10)
@@ -92,5 +97,5 @@ if __name__ == "__main__":
             conn.send('\n'.join(lru) + '\n')
             conn.close()
     except KeyboardInterrupt:
-        observer.stop()
-    observer.join()
+        notifier.stop()
+    notifier.join()
