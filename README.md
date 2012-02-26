@@ -7,6 +7,10 @@ watch
 
 _watch_ attempts to keep track of your most recently used directories.  To this end it uses the inotify API (thus Linux only) to monitor your filesystem for pretty much any event, and whenever you do anything to a file/directory, it puts the relevant directory into a short history list.
 
+It is inspired by [Fresh](http://www.ironicsoftware.com/fresh/index.html) which was advertised on [One Thing Well](http://onethingwell.org/post/18073090299/fresh).  However since that is OS X only, I could not even run it to have a look.
+
+Thinking about the idea, I noticed that I frequently want to open a shell to play with files I have open in some other program (e.g., after opening a file in Emacs I frequently want to have a shell to use git in the same directory).  Of course, opening a shell does not require knowing the _file_ path, just the directory, hence this tool.
+
 ### Usage
 
 * Edit the source: at the very least you need to s|/home/thomas|your_home_directory|
@@ -50,3 +54,10 @@ Or for a fancier usage, I have the following in my xmonad.hs, with a key bound t
     spawnKonsole dir = spawn $ "konsole --workdir " ++ dir
 
 I'm sure you have more great ideas.
+
+### TODO
+
+* Make the hard-coded values configurable
+* Fix the wait when interrupting (right now it only exits if the inotify-reading thread has something to read)
+* Give more interesting example usages
+* Optionally track files instead of dirs?
