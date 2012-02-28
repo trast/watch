@@ -2,7 +2,6 @@
 
 #include <errno.h>
 #include <sys/inotify.h>
-#include <pthread.h>
 #include <fnmatch.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -14,6 +13,7 @@
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/select.h>
 
 void die(const char *msg)
 {
@@ -88,7 +88,6 @@ int wd_alloc = 0;
 
 #define HIST 5
 const char *lru[HIST] = {0};
-pthread_mutex_t lru_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void set_dirpath(int wd, const char *path)
 {
@@ -289,27 +288,22 @@ static inline int event_len(struct inotify_event *ev)
 	return sizeof(struct inotify_event) + ev->len;
 }
 
-void *watcher_thread (void *unused)
+void handle_inotify ()
 {
 	char buf[4096+PATH_MAX];
-	while (!should_exit) {
-		ssize_t ret = read(ifd, &buf, sizeof(buf));
-		int handled = 0;
-		if (ret == -1) {
-			if (errno == EINTR)
-				continue;
-			die_errno("read");
-		}
-		pthread_mutex_lock(&lru_lock);
-		while (handled < ret) {
-			char *p = buf + handled;
-			struct inotify_event *ev = (struct inotify_event *) p;
-			handle_event(ev);
-			handled += event_len(ev);
-		}
-		pthread_mutex_unlock(&lru_lock);
+	ssize_t ret = read(ifd, &buf, sizeof(buf));
+	int handled = 0;
+	if (ret == -1) {
+		if (errno == EINTR)
+			return;
+		die_errno("read");
 	}
-	return NULL;
+	while (handled < ret) {
+		char *p = buf + handled;
+		struct inotify_event *ev = (struct inotify_event *) p;
+		handle_event(ev);
+		handled += event_len(ev);
+	}
 }
 
 const char SOCKNAME[] = "/home/thomas/.watchsock";
@@ -320,7 +314,6 @@ void send_lru(int conn)
 	char *p = buf;
 	int i;
 
-	pthread_mutex_lock(&lru_lock);
 	for (i = 0; i < HIST; i++) {
 		int len;
 		if (!lru[i])
@@ -330,25 +323,24 @@ void send_lru(int conn)
 		p += len;
 		*p++ = '\n';
 	}
-	pthread_mutex_unlock(&lru_lock);
+
 	write(conn, buf, p-buf); /* errors ignored */
 }
 
 int main (int argc, char *argv[])
 {
-	pthread_t wt;
 	int sock, conn;
 	struct sockaddr_un addr, peer;
 	socklen_t peer_sz;
+	fd_set rfds;
+	int ret;
+	int maxfd;
 
 	ifd = inotify_init();
 	if (ifd < 0)
 		die_errno("inotify_init");
 	setup_watches("/home/thomas");
 	setup_watches("/media");
-
-	xsignal(SIGINT, make_me_exit);
-	xsignal(SIGTERM, make_me_exit);
 
 	unlink(SOCKNAME); /* errors deliberately ignored */
 	sock = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -359,26 +351,37 @@ int main (int argc, char *argv[])
 	strncpy(addr.sun_path, SOCKNAME, sizeof(addr.sun_path)-1);
 	if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)))
 		die_errno("bind");
+	if (listen(sock, 10))
+		die_errno("listen");
 
-	if (pthread_create(&wt, NULL, watcher_thread, NULL))
-		die_errno("pthread_create");
+	maxfd = sock;
+	if (ifd > maxfd)
+		maxfd = ifd;
+	maxfd++;
 
-	while (!should_exit) {
-		if (listen(sock, 10))
-			die_errno("listen");
-		conn = accept(sock, (struct sockaddr *) &peer, &peer_sz);
-		if (conn < 0)
-			die_errno("accept");
-		send_lru(conn);
-		close(conn); /* errors ignored */
+	while (1) {
+		FD_ZERO(&rfds);
+		FD_SET(ifd, &rfds);
+		FD_SET(sock, &rfds);
+		ret = select(maxfd, &rfds, NULL, NULL, NULL);
+		if (ret == -1)
+			die_errno("select");
+		if (!ret)
+			continue;
+		if (FD_ISSET(ifd, &rfds))
+			handle_inotify();
+		if (FD_ISSET(sock, &rfds)) {
+			conn = accept(sock, (struct sockaddr *) &peer, &peer_sz);
+			if (conn < 0)
+				die_errno("accept");
+			send_lru(conn);
+			close(conn); /* errors ignored */
+		}
 	}
 
+	/* we never get here, but meh */
 	if (close(sock) < 0)
 		die_errno("close");
-
-	pthread_kill(wt, SIGINT);
-	if (pthread_join(wt, NULL))
-		die_errno("pthread_join");
 
 	return 0;
 }
