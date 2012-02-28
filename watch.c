@@ -61,20 +61,25 @@ void *xrealloc(void *ptr, size_t size)
 /* --- end from git --- */
 
 const char *ignore_patterns[] = {
+    "/home/thomas/.*",
+    "*/.git",
+    "*/.svn",
+    "*/.depend",
+    "*/backup",
     "/home/thomas/Mail",
     "/home/thomas/News",
     "/home/thomas/musik",
     "/home/thomas/filme",
-    "*/.git",
-    "*/.svn",
-    "/home/thomas/.*",
+    "/home/thomas/Desktop",
     "*/tiles",
     "/home/thomas/dl/radar",
     "/home/thomas/g1/maps/*",
     "/home/thomas/eth/vc_simulation/*",
     "/home/thomas/logs",
-    "*/.depend",
-    "*/backup",
+    "/home/thomas/apps/cedet",
+    "/home/thomas/nobackup/HoN/*",
+    "/home/thomas/apps/conkeror",
+    "*/.Spotlight*",
     NULL
 };
 
