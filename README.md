@@ -13,9 +13,9 @@ Thinking about the idea, I noticed that I frequently want to open a shell to pla
 
 ### Usage
 
-* Edit the source: at the very least you need to s|/home/thomas|your_home_directory|
-* `make`; you may want to optimize as well
-* Run it
+* `make`
+* Configure an ignore list (a list of fnmatch() patterns) in ~/.watch-ignore
+* `./watch`
 * Do something with its output :-)
 
 The "output" is in ~/.watchsock.  Whenever you connect to that, it will send you the most-recently-used list (and close the connection immediately).  So you can do things like
@@ -57,7 +57,15 @@ I'm sure you have more great ideas.
 
 ### TODO
 
-* Make the hard-coded values configurable
-* Fix the wait when interrupting (right now it only exits if the inotify-reading thread has something to read)
 * Give more interesting example usages
+* Do something about typical patterns that clog up the access history:
+  - shell completion tends to scan a, a/b, a/b/c, etc.
+  - running find etc. in a directory runs readdir() over the tree
+  - running git in a directory frequently lstat()s files all over the repo
+  The problem is that these are opposites: in one case you want only the most recent/deepest path to remain, in the other you want the parent dir which was probably accessed in the beginning.
+* Running something like rsync across the whole tree should probably be ignored, but this is even harder than the last point.
+* git (and perhaps hg etc.) handling should be improved:
+  - add built-in ignore rules for .git/* etc.
+  - when accessing X/.git/Y, enter X into the history
+  etc.
 * Optionally track files instead of dirs?
