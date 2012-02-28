@@ -378,7 +378,7 @@ int main (int argc, char *argv[])
 	ifd = inotify_init();
 	if (ifd < 0)
 		die_errno("inotify_init");
-	setup_watches("/home/thomas");
+	setup_watches(expanduser("~"));
 	setup_watches("/media");
 
 	unlink(SOCKNAME); /* errors deliberately ignored */
