@@ -60,28 +60,9 @@ void *xrealloc(void *ptr, size_t size)
 
 /* --- end from git --- */
 
-const char *ignore_patterns[] = {
-    "/home/thomas/.*",
-    "*/.git",
-    "*/.svn",
-    "*/.depend",
-    "*/backup",
-    "/home/thomas/Mail",
-    "/home/thomas/News",
-    "/home/thomas/musik",
-    "/home/thomas/filme",
-    "/home/thomas/Desktop",
-    "*/tiles",
-    "/home/thomas/dl/radar",
-    "/home/thomas/g1/maps/*",
-    "/home/thomas/eth/vc_simulation/*",
-    "/home/thomas/logs",
-    "/home/thomas/apps/cedet",
-    "/home/thomas/nobackup/HoN/*",
-    "/home/thomas/apps/conkeror",
-    "*/.Spotlight*",
-    NULL
-};
+char **ignore_patterns = NULL;
+int ignore_alloc = 0;
+const char ignore_file[] = "/home/thomas/.watch-ignore";
 
 char **wdpaths = NULL;
 int wd_alloc = 0;
@@ -116,9 +97,44 @@ int xfnmatch(const char *pat, const char *str, int flags)
 	return -1;
 }
 
+void read_ignore_file()
+{
+	FILE *fp;
+	int i = 0;
+	char *line = NULL;
+	size_t len;
+	int ret;
+
+	/* ensure at least NULL is in the list */
+	ALLOC_GROW(ignore_patterns, 1, ignore_alloc);
+	ignore_patterns[0] = NULL;
+
+	if (!(fp = fopen(ignore_file, "r"))) {
+		if (errno == ENOENT)
+			return;
+		die_errno("fopen");
+	}
+
+	while ((ret = getline(&line, &len, fp)) > 0) {
+		i++;
+		ALLOC_GROW(ignore_patterns, i+1, ignore_alloc);
+		if (ret != strlen(line))
+			die("\\0 in ignore file");
+		if (line[ret-1] == '\n')
+			line[ret-1] = '\0';
+		ignore_patterns[i-1] = line;
+		line = NULL;
+	}
+
+	ignore_patterns[i] = NULL;
+
+	if (fclose(fp) != 0)
+		die_errno("fclose");
+}
+
 int is_ignored(const char *path)
 {
-	const char **pp = ignore_patterns;
+	char **pp = ignore_patterns;
 	while (*pp) {
 		if (!fnmatch(*pp, path, 0))
 			return 1;
@@ -335,6 +351,8 @@ int main (int argc, char *argv[])
 	fd_set rfds;
 	int ret;
 	int maxfd;
+
+	read_ignore_file();
 
 	ifd = inotify_init();
 	if (ifd < 0)
