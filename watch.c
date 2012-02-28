@@ -62,7 +62,7 @@ void *xrealloc(void *ptr, size_t size)
 
 char **ignore_patterns = NULL;
 int ignore_alloc = 0;
-const char ignore_file[] = "/home/thomas/.watch-ignore";
+#define IGNORE_FILE_NAME "~/.watch-ignore"
 
 char **wdpaths = NULL;
 int wd_alloc = 0;
@@ -97,6 +97,25 @@ int xfnmatch(const char *pat, const char *str, int flags)
 	return -1;
 }
 
+// returns either 'path' or a statically allocated buffer!
+char *expanduser(char *path)
+{
+	static char buf[PATH_MAX+1];
+
+	if (path[0] != '~')
+		return path;
+
+	if (strlen(path)+strlen(home)+1 >= PATH_MAX)
+		die("I cannot handle paths longer than PATH_MAX");
+
+	home = getenv("HOME");
+	if (!home)
+		die("HOME is not set");
+	strcpy(buf, home);
+	strcat(buf, path+1);
+	return buf;
+}
+
 void read_ignore_file()
 {
 	FILE *fp;
@@ -104,12 +123,14 @@ void read_ignore_file()
 	char *line = NULL;
 	size_t len;
 	int ret;
+	char buf[PATH_MAX+1];
+	char *home;
 
 	/* ensure at least NULL is in the list */
 	ALLOC_GROW(ignore_patterns, 1, ignore_alloc);
 	ignore_patterns[0] = NULL;
 
-	if (!(fp = fopen(ignore_file, "r"))) {
+	if (!(fp = fopen(expanduser(IGNORE_FILE_NAME), "r"))) {
 		if (errno == ENOENT)
 			return;
 		die_errno("fopen");
