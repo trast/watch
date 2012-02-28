@@ -101,16 +101,18 @@ int xfnmatch(const char *pat, const char *str, int flags)
 char *expanduser(char *path)
 {
 	static char buf[PATH_MAX+1];
+	char *home;
 
 	if (path[0] != '~')
 		return path;
 
-	if (strlen(path)+strlen(home)+1 >= PATH_MAX)
-		die("I cannot handle paths longer than PATH_MAX");
-
 	home = getenv("HOME");
 	if (!home)
 		die("HOME is not set");
+
+	if (strlen(path)+strlen(home)+1 >= PATH_MAX)
+		die("I cannot handle paths longer than PATH_MAX");
+
 	strcpy(buf, home);
 	strcat(buf, path+1);
 	return buf;
@@ -123,8 +125,6 @@ void read_ignore_file()
 	char *line = NULL;
 	size_t len;
 	int ret;
-	char buf[PATH_MAX+1];
-	char *home;
 
 	/* ensure at least NULL is in the list */
 	ALLOC_GROW(ignore_patterns, 1, ignore_alloc);
@@ -343,7 +343,7 @@ void handle_inotify ()
 	}
 }
 
-const char SOCKNAME[] = "/home/thomas/.watchsock";
+char SOCKNAME[] = "~/.watchsock";
 
 void send_lru(int conn)
 {
@@ -367,6 +367,7 @@ void send_lru(int conn)
 int main (int argc, char *argv[])
 {
 	int sock, conn;
+	char *sockname;
 	struct sockaddr_un addr, peer;
 	socklen_t peer_sz;
 	fd_set rfds;
@@ -381,13 +382,14 @@ int main (int argc, char *argv[])
 	setup_watches(expanduser("~"));
 	setup_watches("/media");
 
-	unlink(SOCKNAME); /* errors deliberately ignored */
+	sockname = expanduser(SOCKNAME);
+	unlink(sockname); /* errors deliberately ignored */
 	sock = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (sock < 0)
 		die_errno("socket");
 	memset(&addr, 0, sizeof(addr));
 	addr.sun_family = AF_UNIX;
-	strncpy(addr.sun_path, SOCKNAME, sizeof(addr.sun_path)-1);
+	strncpy(addr.sun_path, sockname, sizeof(addr.sun_path)-1);
 	if (bind(sock, (struct sockaddr *) &addr, sizeof(addr)))
 		die_errno("bind");
 	if (listen(sock, 10))
