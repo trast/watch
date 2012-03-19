@@ -224,7 +224,9 @@ int setup_one_watch (const char *dir)
 		die_errno("inotify_add_watch");
 	}
 	set_dirpath(wd, dir);
+#ifdef DEBUG
 	fprintf(stderr, "%d: %s\n", wd, dir);
+#endif
 	return 0;
 }
 
@@ -310,9 +312,11 @@ void handle_event(struct inotify_event *ev)
 		free(wdp);
 		return;
 	}
+#ifdef DEBUG
 	if (ev->mask != IN_ACCESS)
 		fprintf(stdout, "%08x %s %s %s\n", ev->mask, event_msg(ev->mask), wdp,
 			ev->len ? ev->name : "(none)");
+#endif
 	for (i = 0; i < HIST; i++) {
 		if (!lru[i])
 			break;
