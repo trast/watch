@@ -1,5 +1,5 @@
 O = 3
-CFLAGS = -O$(O) -g -pthread -Wall
+CFLAGS = -O$(O) -g -Wall
 
 all: watch
 
