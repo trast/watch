@@ -214,6 +214,20 @@ const char *event_msg(int mask)
 	return "<huh?>";
 }
 
+int setup_one_watch (const char *dir)
+{
+	int wd;
+	wd = inotify_add_watch(ifd, dir, MASK);
+	if (wd < 0) {
+		if (errno == EACCES || errno == ENOENT)
+			return -1;
+		die_errno("inotify_add_watch");
+	}
+	set_dirpath(wd, dir);
+	fprintf(stderr, "%d: %s\n", wd, dir);
+	return 0;
+}
+
 void setup_watches (const char *dir)
 {
 	DIR *dirfd = opendir(dir);
@@ -229,7 +243,6 @@ void setup_watches (const char *dir)
 	}
 	while ((ent = xreaddir(dirfd))) {
 		int entlen = strlen(ent->d_name);
-		int wd;
 		if (!strcmp(ent->d_name, ".")
 		    || !strcmp(ent->d_name, ".."))
 			continue;
@@ -239,15 +252,8 @@ void setup_watches (const char *dir)
 			continue;
 		if (!isdir(fullent))
 			continue;
-		wd = inotify_add_watch(ifd, fullent, MASK);
-		if (wd < 0) {
-			if (errno == EACCES || errno == ENOENT)
-				continue;
-			die_errno("inotify_add_watch");
-		}
-		set_dirpath(wd, fullent);
-		fprintf(stderr, "%d: %s\n", wd, fullent);
-		setup_watches(fullent);
+		if (!setup_one_watch(fullent))
+			setup_watches(fullent);
 	}
 	if (closedir(dirfd))
 		die_errno("closedir");
