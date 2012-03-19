@@ -281,6 +281,17 @@ void handle_event(struct inotify_event *ev)
 	wdp = wdpaths[ev->wd];
 	if (!wdp)
 		return;
+	if (ev->mask & IN_ISDIR && ev->mask & IN_CREATE) {
+		char buf[PATH_MAX];
+		strcpy(buf, wdp);
+		strcat(buf, "/");
+		strcat(buf, ev->name);
+		if (is_ignored(buf))
+			return;
+		if (!setup_one_watch(buf))
+			setup_watches(buf);
+		return;
+	}
 	/* inotify shows directory events in the parent too; ignore them there */
 	if (ev->len && ev->mask & IN_ISDIR)
 		return;
@@ -302,13 +313,6 @@ void handle_event(struct inotify_event *ev)
 	if (ev->mask != IN_ACCESS)
 		fprintf(stdout, "%08x %s %s %s\n", ev->mask, event_msg(ev->mask), wdp,
 			ev->len ? ev->name : "(none)");
-	if (ev->mask & IN_ISDIR && ev->mask & IN_CREATE) {
-		char buf[PATH_MAX];
-		strcpy(buf, wdp);
-		strcat(buf, "/");
-		strcat(buf, ev->name);
-		setup_watches(buf);
-	}
 	for (i = 0; i < HIST; i++) {
 		if (!lru[i])
 			break;
